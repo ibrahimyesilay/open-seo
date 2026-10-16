@@ -1,4 +1,3 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModelV3 } from "@openrouter/ai-sdk-provider";
 import { APICallError, wrapLanguageModel } from "ai";
 
@@ -152,6 +151,27 @@ function withCost(
   };
 }
 
+// `@ai-sdk/anthropic` is loaded lazily on the first call: the lean-worker
+// bundle plugin denylists it from the worker's eager startup graph (isolate
+// memory), and the SAM DO's `getModel()` hook is sync, so the provider cannot
+// be awaited at construction time. Loaded once per isolate.
+const defaultBuildModels: BuildModels = async (modelKeys, resolvedModel) => {
+  const { createAnthropic } = await import("@ai-sdk/anthropic");
+  return modelKeys.map((key) =>
+    createAnthropic({
+      apiKey: key.apiKey,
+      headers: key.workspaceId
+        ? { "anthropic-workspace-id": key.workspaceId }
+        : undefined,
+    })(resolvedModel),
+  );
+};
+
+type BuildModels = (
+  modelKeys: AnthropicKey[],
+  resolvedModel: string,
+) => LanguageModelV3[] | Promise<LanguageModelV3[]>;
+
 /**
  * Builds the AI SDK LanguageModel for Claude. `keys` are tried in order on
  * every call (see shouldFailOverToNextKey). The returned model reports the
@@ -164,32 +184,29 @@ export function buildAnthropicChatModel(
   keys: AnthropicKey[],
   modelId: string | undefined,
   effort: ReasoningEffort,
-  buildModels: (
-    modelKeys: AnthropicKey[],
-    resolvedModel: string,
-  ) => LanguageModelV3[] = (modelKeys, resolvedModel) =>
-    modelKeys.map((key) =>
-      createAnthropic({
-        apiKey: key.apiKey,
-        headers: key.workspaceId
-          ? { "anthropic-workspace-id": key.workspaceId }
-          : undefined,
-      })(resolvedModel),
-    ),
+  buildModels: BuildModels = defaultBuildModels,
 ): LanguageModelV3 {
   if (keys.length === 0) {
     throw new Error("buildAnthropicChatModel needs at least one API key");
   }
   const resolvedModelId = modelId ?? DEFAULT_ANTHROPIC_MODEL;
-  const models = buildModels(keys, resolvedModelId);
-  const [primary] = models;
-  if (!primary) {
-    throw new Error("buildAnthropicChatModel produced no models");
-  }
+  let modelsPromise: Promise<LanguageModelV3[]> | undefined;
+  const getModels = () => {
+    modelsPromise ??= Promise.resolve(buildModels(keys, resolvedModelId)).then(
+      (models) => {
+        if (models.length === 0) {
+          throw new Error("buildAnthropicChatModel produced no models");
+        }
+        return models;
+      },
+    );
+    return modelsPromise;
+  };
 
   async function tryEach<T>(
     run: (model: LanguageModelV3, index: number) => PromiseLike<T>,
   ): Promise<T> {
+    const models = await getModels();
     let lastError: unknown;
     for (const [index, model] of models.entries()) {
       try {
@@ -206,8 +223,23 @@ export function buildAnthropicChatModel(
     throw lastError;
   }
 
+  // The wrapped base never runs: the middleware below replaces both call
+  // paths and dispatches to the lazily built provider models.
+  const base: LanguageModelV3 = {
+    specificationVersion: "v3",
+    provider: "anthropic",
+    modelId: resolvedModelId,
+    supportedUrls: {},
+    doGenerate: () => {
+      throw new Error("unreachable: replaced by the failover middleware");
+    },
+    doStream: () => {
+      throw new Error("unreachable: replaced by the failover middleware");
+    },
+  };
+
   return wrapLanguageModel({
-    model: primary,
+    model: base,
     middleware: {
       specificationVersion: "v3",
       transformParams: async ({ params }) => ({
