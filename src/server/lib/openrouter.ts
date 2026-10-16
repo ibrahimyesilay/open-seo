@@ -4,6 +4,11 @@ import {
   type OpenRouterProvider,
 } from "@openrouter/ai-sdk-provider";
 import { wrapLanguageModel } from "ai";
+import {
+  buildAnthropicChatModel,
+  parseAnthropicKeys,
+} from "@/server/lib/anthropic-chat-model";
+import { getOptionalEnvValue } from "@/server/lib/runtime-env";
 
 // OpenRouter model slug used for the SAM in-app chat agent. Override with
 // OPENROUTER_MODEL to swap models without a code change.
@@ -42,6 +47,80 @@ async function openAiBlockedHere(): Promise<boolean> {
     .then((trace) => /^loc=(\w+)$/m.exec(trace)?.[1] ?? "")
     .catch(() => "");
   return OPENAI_BLOCKED_COUNTRIES.includes(egressCountry);
+}
+
+type EnvGetter = (name: string) => string | undefined;
+
+/** True when some LLM provider is configured for SAM/research/suggestions. */
+function hasChatModelConfig(get: EnvGetter): boolean {
+  return (
+    parseAnthropicKeys(get("ANTHROPIC_API_KEYS") ?? get("ANTHROPIC_API_KEY"))
+      .length > 0 || Boolean(get("OPENROUTER_API_KEY"))
+  );
+}
+
+export async function hasChatModelConfigAsync(): Promise<boolean> {
+  const env = await readChatModelEnv();
+  return hasChatModelConfig((name) => env[name]);
+}
+
+export const CHAT_MODEL_KEY_MISSING_MESSAGE =
+  "Set ANTHROPIC_API_KEYS (Claude API keys, comma-separated) or OPENROUTER_API_KEY to enable the AI features.";
+
+/**
+ * Picks the configured provider: Claude (direct, ANTHROPIC_API_KEYS — see
+ * anthropic-chat-model.ts for key failover) when set, else OpenRouter. The
+ * `get` callback reads env vars so a Durable Object (sync `this.env`) and the
+ * request path (async Workers env) share one resolution.
+ */
+export function buildConfiguredChatModel(
+  get: EnvGetter,
+  reasoningEffort: "max" | "low" = "max",
+): LanguageModelV3 {
+  const anthropicKeys = parseAnthropicKeys(
+    get("ANTHROPIC_API_KEYS") ?? get("ANTHROPIC_API_KEY"),
+  );
+  if (anthropicKeys.length > 0) {
+    return buildAnthropicChatModel(
+      anthropicKeys,
+      get("ANTHROPIC_MODEL"),
+      reasoningEffort,
+    );
+  }
+  const openRouterKey = get("OPENROUTER_API_KEY");
+  if (!openRouterKey) {
+    throw new Error(CHAT_MODEL_KEY_MISSING_MESSAGE);
+  }
+  return buildChatAgentModel(
+    openRouterKey,
+    get("OPENROUTER_MODEL"),
+    reasoningEffort,
+  );
+}
+
+const CHAT_MODEL_ENV_VARS = [
+  "ANTHROPIC_API_KEYS",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_MODEL",
+  "OPENROUTER_API_KEY",
+  "OPENROUTER_MODEL",
+] as const;
+
+async function readChatModelEnv(): Promise<Record<string, string | undefined>> {
+  const entries = await Promise.all(
+    CHAT_MODEL_ENV_VARS.map(
+      async (name) => [name, await getOptionalEnvValue(name)] as const,
+    ),
+  );
+  return Object.fromEntries(entries);
+}
+
+/** Request-path variant of buildConfiguredChatModel (async env reads). */
+export async function buildConfiguredChatModelAsync(
+  reasoningEffort: "max" | "low" = "max",
+): Promise<LanguageModelV3> {
+  const env = await readChatModelEnv();
+  return buildConfiguredChatModel((name) => env[name], reasoningEffort);
 }
 
 /**

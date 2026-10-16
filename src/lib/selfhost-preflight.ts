@@ -196,20 +196,27 @@ function checkOptionalFeatures(env: EnvRecord, items: PreflightItem[]): void {
   }
 
   items.push(
-    get(env, "OPENROUTER_API_KEY")
+    get(env, "ANTHROPIC_API_KEYS") || get(env, "ANTHROPIC_API_KEY")
       ? {
           key: "ai",
           name: "AI features",
           level: "ok",
-          message: "OPENROUTER_API_KEY set",
+          message: "ANTHROPIC_API_KEYS set (Claude API)",
         }
-      : {
-          key: "ai",
-          name: "AI features",
-          level: "info",
-          message:
-            "OPENROUTER_API_KEY not set (optional) — SAM, the in-app SEO agent, is disabled.",
-        },
+      : get(env, "OPENROUTER_API_KEY")
+        ? {
+            key: "ai",
+            name: "AI features",
+            level: "ok",
+            message: "OPENROUTER_API_KEY set",
+          }
+        : {
+            key: "ai",
+            name: "AI features",
+            level: "info",
+            message:
+              "Neither ANTHROPIC_API_KEYS nor OPENROUTER_API_KEY set (optional) — SAM, the in-app SEO agent, is disabled.",
+          },
   );
 
   items.push(

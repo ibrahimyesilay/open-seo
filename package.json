@@ -76,6 +76,7 @@
     }
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.128",
     "@ai-sdk/react": "^3.0.211",
     "@base-ui/react": "^1.8.0",
     "@better-auth/api-key": "1.6.22",

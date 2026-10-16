@@ -10,11 +10,7 @@ import { fetchLiveSerp } from "@/server/lib/dataforseo/serp";
 import { DataforseoChargedTaskError } from "@/server/lib/dataforseo/envelope";
 import { normalizeBacklinksTarget } from "@/server/lib/dataforseoBacklinksTarget";
 import { AppError } from "@/server/lib/errors";
-import { buildChatAgentModel } from "@/server/lib/openrouter";
-import {
-  getOptionalEnvValue,
-  getRequiredEnvValue,
-} from "@/server/lib/runtime-env";
+import { buildConfiguredChatModelAsync } from "@/server/lib/openrouter";
 import { readSite } from "@/server/lib/scrape";
 import {
   MAX_SUGGESTED_KEYWORDS,
@@ -119,11 +115,7 @@ export async function researchWebsite(
   });
   try {
     const result = await generateText({
-      model: buildChatAgentModel(
-        await getRequiredEnvValue("OPENROUTER_API_KEY"),
-        await getOptionalEnvValue("OPENROUTER_MODEL"),
-        "low",
-      ),
+      model: await buildConfiguredChatModelAsync("low"),
       output: Output.object({
         schema: outputSchema,
       }),

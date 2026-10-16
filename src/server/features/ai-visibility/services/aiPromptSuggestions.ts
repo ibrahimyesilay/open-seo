@@ -9,12 +9,8 @@ import {
 } from "@/server/billing/subscription";
 import { billResearchSpend } from "@/server/billing/researchSpend";
 import { requireOpenRouterCostUsd } from "@/server/lib/chatAgent";
-import { buildChatAgentModel } from "@/server/lib/openrouter";
-import {
-  getOptionalEnvValue,
-  getRequiredEnvValue,
-  isHostedServerAuthMode,
-} from "@/server/lib/runtime-env";
+import { buildConfiguredChatModelAsync } from "@/server/lib/openrouter";
+import { isHostedServerAuthMode } from "@/server/lib/runtime-env";
 import { AppError } from "@/server/lib/errors";
 import { z } from "zod";
 import { normalizeAiSuggestion } from "@/shared/ai-prompt-suggestions";
@@ -73,11 +69,7 @@ export async function generateAiPrompts(
     ? suggestedAiTopicSchema.extend({ name: z.string().trim().min(1).max(120) })
     : suggestedAiTopicSchema;
   const result = await generateText({
-    model: buildChatAgentModel(
-      await getRequiredEnvValue("OPENROUTER_API_KEY"),
-      await getOptionalEnvValue("OPENROUTER_MODEL"),
-      "low",
-    ),
+    model: await buildConfiguredChatModelAsync("low"),
     output: Output.object({ schema: outputSchema }),
     maxOutputTokens: 2000,
     abortSignal: AbortSignal.timeout(60_000),

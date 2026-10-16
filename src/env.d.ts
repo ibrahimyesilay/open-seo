@@ -82,6 +82,13 @@ declare namespace Cloudflare {
     OPENROUTER_API_KEY?: string;
     // Optional OpenRouter model slug override (defaults in openrouter.ts).
     OPENROUTER_MODEL?: string;
+    // Claude API keys for SAM / research / suggestions, tried in order with
+    // failover on exhausted credits: `key[,key@wrkspc_…]` (anthropic-chat-model.ts).
+    ANTHROPIC_API_KEYS?: string;
+    // Single-key alias of ANTHROPIC_API_KEYS.
+    ANTHROPIC_API_KEY?: string;
+    // Optional Claude model id override (defaults in anthropic-chat-model.ts).
+    ANTHROPIC_MODEL?: string;
   }
 }
 
