@@ -10,6 +10,7 @@ import {
   Link2,
   MessageSquare,
   Search,
+  Sparkles,
   TrendingUp,
 } from "lucide-react";
 import { linkOptions } from "@tanstack/react-router";
@@ -85,6 +86,13 @@ const projectNavItems = [
     label: "Context",
     icon: Brain,
   },
+  // Fork addition: upstream keeps the SAM chat route reachable only by URL
+  // while it is in beta; this deployment lists it in the nav.
+  {
+    to: "/p/$projectId/sam" as const,
+    label: "SAM Agent",
+    icon: Sparkles,
+  },
 ] as const;
 
 // Project-independent. Rendered inside the project "AI Tools" group when a project
@@ -152,6 +160,7 @@ export function getProjectNavGroups(projectId: string) {
     {
       label: "AI Tools",
       items: [
+        byPath("/p/$projectId/sam"),
         byPath("/p/$projectId/reports"),
         byPath("/p/$projectId/context"),
         aiNavItem,
